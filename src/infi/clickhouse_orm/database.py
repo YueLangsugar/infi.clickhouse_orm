@@ -265,30 +265,28 @@ class Database(object):
         return int(r.text) if r.text else 0
 
     def select(self, query, fields, model_class=None, settings=None):
-        '''
+        """
         Performs a query and returns a generator of model instances.
 
         - `query`: the SQL query to execute.
         - `model_class`: the model class matching the query's table,
           or `None` for getting back instances of an ad-hoc model.
         - `settings`: query settings to send as HTTP GET parameters
-        '''
+        """
         query += ' FORMAT TabSeparatedWithNamesAndTypes'
         query = self._substitute(query, model_class)  # todo: 这里目前只做了单表的替换，多表的后续考虑
         r = self._send(query, settings, True)
         lines = r.iter_lines()
         # 这里获取field_names就是要修改的
         field_names = parse_tsv(next(lines))
-        print("field_names", field_names)
         # 这里去掉type
         next(lines)
         # field_names = parse_tsv(next(lines))
         # field_types = parse_tsv(next(lines))
-        # model_class = model_class or ModelBase.create_ad_hoc_model(zip(field_names, field_types))
         for line in lines:
             # skip blank line left by WITH TOTALS modifier
             if line:
-                yield self.from_tsv(line, fields, self.server_timezone)
+                yield self.from_tsv(line, zip(field_names, fields), self.server_timezone)
 
     def raw(self, query, settings=None, stream=False):
         '''
@@ -373,10 +371,10 @@ class Database(object):
         '''
         values = iter(parse_tsv(line))
         kwargs = {}
-        for field in fields:
+        for field_name, field in fields:
             field_timezone = getattr(field, 'timezone', None) or timezone_in_use
             value = next(values)
-            kwargs[field.name] = field.to_python(value, field_timezone)
+            kwargs[field_name] = field.to_python(value, field_timezone)
 
         # todo: 这里其实可以考虑返回一个对象， 目前不这么麻烦
         # obj = cls(**kwargs)

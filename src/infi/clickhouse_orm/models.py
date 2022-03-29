@@ -453,7 +453,7 @@ class Model(metaclass=ModelBase):
         '''
         Returns a `QuerySet` for selecting instances of this model class.
         '''
-        return QuerySet(cls, database)
+        return QuerySet(cls, database, cls.fields())
 
     @classmethod
     def fields(cls, writable=False):
@@ -481,12 +481,12 @@ class Model(metaclass=ModelBase):
 
     @classmethod
     def select(cls, *fields):
-        if not cls._database:
-            raise ValueError("database is not bind")
+        # if not cls._database:
+        #     raise ValueError("database is not bind")
         if not fields:
-            fields = cls.fields()
+            fields = [field for key, field in cls.fields().items()]
 
-        return QuerySet(cls, cls._database, *fields)
+        return QuerySet(cls, cls._database, fields)
 
 
 class BufferModel(Model):

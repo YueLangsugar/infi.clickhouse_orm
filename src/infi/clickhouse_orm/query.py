@@ -287,7 +287,7 @@ class QuerySet(object):
     matching rows (model instances).
     """
 
-    def __init__(self, model_cls, database, *fields):
+    def __init__(self, model_cls, database, fields):
         """
         Initializer. It is possible to create a queryset like this, but the standard
         way is to use `MyModel.objects_in(database)`.
@@ -300,7 +300,7 @@ class QuerySet(object):
         self._prewhere_q = Q()
         self._grouping_fields = []
         self._grouping_with_totals = False
-        self._fields = fields
+        self._fields = list(fields)
         self._limits = None
         self._limit_by = None
         self._limit_by_fields = None
@@ -365,18 +365,20 @@ class QuerySet(object):
         """
         Returns the selected fields or expressions as a SQL string.
         """
-        fields = '*'
-        if self._fields:
-            fields_ = []
-            # todo: 这里需要对 field进行处理下
-            for field in self._fields:
-                if field.parent == self._model_cls:
-                    fields_.append(f"`{field.name}`")
+        fields_ = []
+        include = []
+
+        for field in self._fields:
+            if field.parent == self._model_cls:
+                fields_.append(f"`{field.parent.table_name()}`.`{field.name}` as `{field.name}`")
+                include.append(field.name)
+            else:
+                if field.name in include:
+                    fields_.append(f"`{field.parent.table_name()}`.`{field.name}`")
                 else:
-                    fields_.append(f"`{field.parent.table_name()}.{field.name}`")
-            fields = comma_join(fields_)
-        print("fields", fields, self._fields)
-        return fields
+                    fields_.append(f"`{field.name}`")
+                    include.append(field.name)
+        return comma_join(fields_)
 
     def as_sql(self):
         """
@@ -481,6 +483,9 @@ class QuerySet(object):
         src, des = on.args
         _join_sql = f" {strictness} {join_type} join {model.table_name()} on {src.parent.table_name()}.{src.name}{on.name}{model.table_name()}.{des.name}"
         # 这里直接赋值
+        for _, field in model.fields().items():
+            # 这里要判断一下是否存在把
+            qs._fields.append(field)
         qs._joins.append(_join_sql)
         return qs
 
