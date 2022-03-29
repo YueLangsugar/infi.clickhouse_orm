@@ -287,19 +287,20 @@ class QuerySet(object):
     matching rows (model instances).
     """
 
-    def __init__(self, model_cls, database):
+    def __init__(self, model_cls, database, *fields):
         """
         Initializer. It is possible to create a queryset like this, but the standard
         way is to use `MyModel.objects_in(database)`.
         """
         self._model_cls = model_cls
         self._database = database
+        self._joins = []
         self._order_by = []
         self._where_q = Q()
         self._prewhere_q = Q()
         self._grouping_fields = []
         self._grouping_with_totals = False
-        self._fields = model_cls.fields().keys()
+        self._fields = fields
         self._limits = None
         self._limit_by = None
         self._limit_by_fields = None
@@ -310,7 +311,7 @@ class QuerySet(object):
         """
         Iterates over the model instances matching this queryset
         """
-        return self._database.select(self.as_sql(), self._model_cls)
+        return self._database.select(self.as_sql(), self._fields, self._model_cls)
 
     def __bool__(self):
         """
@@ -359,13 +360,22 @@ class QuerySet(object):
         qs._limit_by_fields = fields_or_expr
         return qs
 
+    # todo: 这里可能需要修改下
     def select_fields_as_sql(self):
         """
         Returns the selected fields or expressions as a SQL string.
         """
         fields = '*'
         if self._fields:
-            fields = comma_join('`%s`' % field for field in self._fields)
+            fields_ = []
+            # todo: 这里需要对 field进行处理下
+            for field in self._fields:
+                if field.parent == self._model_cls:
+                    fields_.append(f"`{field.name}`")
+                else:
+                    fields_.append(f"`{field.parent.table_name()}.{field.name}`")
+            fields = comma_join(fields_)
+        print("fields", fields, self._fields)
         return fields
 
     def as_sql(self):
@@ -377,8 +387,10 @@ class QuerySet(object):
         table_name = '`%s`' % self._model_cls.table_name()
         if self._model_cls.is_system_model():
             table_name = '`system`.' + table_name
-        params = (distinct, self.select_fields_as_sql(), table_name, final)
-        sql = u'SELECT %s%s\nFROM %s%s' % params
+
+        joins = " ".join(self._joins) if self._joins else ""
+        params = (distinct, self.select_fields_as_sql(), table_name, joins, final)
+        sql = u'SELECT %s%s\nFROM %s%s%s' % params
 
         if self._prewhere_q and not self._prewhere_q.is_empty:
             sql += '\nPREWHERE ' + self.conditions_as_sql(prewhere=True)
@@ -402,6 +414,7 @@ class QuerySet(object):
         if self._limits:
             sql += '\nLIMIT %d, %d' % self._limits
 
+        print("sql==", sql)
         return sql
 
     def order_by_as_sql(self):
@@ -450,6 +463,25 @@ class QuerySet(object):
         """
         qs = copy(self)
         qs._fields = field_names
+        return qs
+
+    def join(self, model,  on, strictness="ALL", join_type="INNER"):
+        """
+        :param model:  模型类
+        :param on:  Users.oid == Address.user_oid
+        :param strictness:
+        :param join_type:
+        :return:
+        """
+        assert strictness in ["ALL", "ANY", "ASOF"], "`strictness` must in ['ALL', 'ANY', 'ASOF']"
+        assert join_type in ["INNER", 'LEFT', "RIGHT"], "`join_type` must in ['INNER', 'LEFT', 'RIGHT']"
+        print("on=", on, type(on))
+        qs = copy(self)
+        # 这里处理一下join的拼接把
+        src, des = on.args
+        _join_sql = f" {strictness} {join_type} join {model.table_name()} on {src.parent.table_name()}.{src.name}{on.name}{model.table_name()}.{des.name}"
+        # 这里直接赋值
+        qs._joins.append(_join_sql)
         return qs
 
     def _filter_or_exclude(self, *q, **kwargs):

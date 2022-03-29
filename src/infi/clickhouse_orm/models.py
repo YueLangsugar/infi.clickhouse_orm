@@ -479,6 +479,15 @@ class Model(metaclass=ModelBase):
         '''
         return cls._system
 
+    @classmethod
+    def select(cls, *fields):
+        if not cls._database:
+            raise ValueError("database is not bind")
+        if not fields:
+            fields = cls.fields()
+
+        return QuerySet(cls, cls._database, *fields)
+
 
 class BufferModel(Model):
 

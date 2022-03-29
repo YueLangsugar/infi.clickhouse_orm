@@ -264,7 +264,7 @@ class Database(object):
         r = self._send(query)
         return int(r.text) if r.text else 0
 
-    def select(self, query, model_class=None, settings=None):
+    def select(self, query, fields, model_class=None, settings=None):
         '''
         Performs a query and returns a generator of model instances.
 
@@ -274,16 +274,21 @@ class Database(object):
         - `settings`: query settings to send as HTTP GET parameters
         '''
         query += ' FORMAT TabSeparatedWithNamesAndTypes'
-        query = self._substitute(query, model_class)
+        query = self._substitute(query, model_class)  # todo: 这里目前只做了单表的替换，多表的后续考虑
         r = self._send(query, settings, True)
         lines = r.iter_lines()
+        # 这里获取field_names就是要修改的
         field_names = parse_tsv(next(lines))
-        field_types = parse_tsv(next(lines))
-        model_class = model_class or ModelBase.create_ad_hoc_model(zip(field_names, field_types))
+        print("field_names", field_names)
+        # 这里去掉type
+        next(lines)
+        # field_names = parse_tsv(next(lines))
+        # field_types = parse_tsv(next(lines))
+        # model_class = model_class or ModelBase.create_ad_hoc_model(zip(field_names, field_types))
         for line in lines:
             # skip blank line left by WITH TOTALS modifier
             if line:
-                yield model_class.from_tsv(line, field_names, self.server_timezone, self)
+                yield self.from_tsv(line, fields, self.server_timezone)
 
     def raw(self, query, settings=None, stream=False):
         '''
@@ -355,6 +360,30 @@ class Database(object):
             self.insert([MigrationHistory(package_name=migrations_package_name, module_name=name, applied=datetime.date.today())])
             if int(name[:4]) >= up_to:
                 break
+
+    def from_tsv(self, line, fields, timezone_in_use=pytz.utc):
+        '''
+        Create a model instance from a tab-separated line. The line may or may not include a newline.
+        The `field_names` list must match the fields defined in the model, but does not have to include all of them.
+
+        - `line`: the TSV-formatted data.
+        - `field_names`: names of the model fields in the data.
+        - `timezone_in_use`: the timezone to use when parsing dates and datetimes. Some fields use their own timezones.
+        - `database`: if given, sets the database that this instance belongs to.
+        '''
+        values = iter(parse_tsv(line))
+        kwargs = {}
+        for field in fields:
+            field_timezone = getattr(field, 'timezone', None) or timezone_in_use
+            value = next(values)
+            kwargs[field.name] = field.to_python(value, field_timezone)
+
+        # todo: 这里其实可以考虑返回一个对象， 目前不这么麻烦
+        # obj = cls(**kwargs)
+        # if self is not None:
+        #     obj.set_database(database)
+
+        return kwargs
 
     def _get_applied_migrations(self, migrations_package_name):
         from .migrations import MigrationHistory
