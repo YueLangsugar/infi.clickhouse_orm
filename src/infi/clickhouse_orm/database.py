@@ -2,6 +2,7 @@ from __future__ import unicode_literals
 
 import re
 import requests
+from itertools import zip_longest
 from collections import namedtuple
 from .models import ModelBase
 from .utils import escape, parse_tsv, import_submodules
@@ -286,7 +287,7 @@ class Database(object):
         for line in lines:
             # skip blank line left by WITH TOTALS modifier
             if line:
-                yield self.from_tsv(line, zip(field_names, fields), self.server_timezone)
+                yield self.from_tsv(line, zip_longest(field_names, fields), self.server_timezone)
 
     def raw(self, query, settings=None, stream=False):
         '''
@@ -372,9 +373,13 @@ class Database(object):
         values = iter(parse_tsv(line))
         kwargs = {}
         for field_name, field in fields:
-            field_timezone = getattr(field, 'timezone', None) or timezone_in_use
             value = next(values)
-            kwargs[field_name] = field.to_python(value, field_timezone)
+            if isinstance(field, str) or field is None:
+                kwargs[field_name] = value
+                pass
+            else:
+                field_timezone = getattr(field, 'timezone', None) or timezone_in_use
+                kwargs[field_name] = field.to_python(value, field_timezone)
 
         # todo: 这里其实可以考虑返回一个对象， 目前不这么麻烦
         # obj = cls(**kwargs)

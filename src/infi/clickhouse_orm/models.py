@@ -8,7 +8,7 @@ import pytz
 
 from .fields import Field, StringField
 from .utils import parse_tsv, NO_VALUE, get_subclass_names, arg_to_sql, unescape
-from .query import QuerySet
+from .query import QuerySet, AggregateQuerySet
 from .funcs import F
 from .engines import Merge, Distributed
 
